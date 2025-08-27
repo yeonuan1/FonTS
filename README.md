@@ -66,7 +66,7 @@ Benchmark download: [🤗 ATR-Bench](https://huggingface.co/datasets/SSS/ATR-ben
 ### Dataset
 Trainset download: [🤗 SC-artext](https://huggingface.co/datasets/SSS/SC-artext) 
 
-### Series Work
+### Serial Work
 [WordCon: Word-level Typography Control in Scene Text Rendering](https://wendashi.github.io/WordCon-Page/)
 
 ### Citation
