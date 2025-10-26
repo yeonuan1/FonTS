@@ -3,7 +3,7 @@
 
 <h4 align="center">
 
-[![ArXiv](https://img.shields.io/badge/ArXiv-2412.00136-b31b1b.svg)](https://arxiv.org/abs/2412.00136) [![Project Website](https://img.shields.io/badge/Project-Website-green.svg)](https://wendashi.github.io/FonTS-Page/)  [![HuggingFace Model](https://img.shields.io/badge/🤗_HuggingFace-Model-ffbd45.svg)](https://huggingface.co/SSS/FonTS-SCA) [![HuggingFace Dataset](https://img.shields.io/badge/🤗_HuggingFace-Dataset-ffbd45.svg)](https://huggingface.co/datasets/SSS/style_fonts_img)
+[![ArXiv](https://img.shields.io/badge/ArXiv-2412.00136-b31b1b.svg)](https://arxiv.org/abs/2412.00136) <a href="https://openaccess.thecvf.com/content/ICCV2025/html/Shi_FonTS_Text_Rendering_With_Typography_and_Style_Controls_ICCV_2025_paper.html"><img src="https://img.shields.io/static/v1?label=CVF&message=paper&color=blue"> [![Project Website](https://img.shields.io/badge/Project-Website-green.svg)](https://wendashi.github.io/FonTS-Page/)  [![HuggingFace Model](https://img.shields.io/badge/🤗_HuggingFace-Model-ffbd45.svg)](https://huggingface.co/SSS/FonTS-SCA) [![HuggingFace Dataset](https://img.shields.io/badge/🤗_HuggingFace-Dataset-ffbd45.svg)](https://huggingface.co/datasets/SSS/style_fonts_img)
 
 
   <div class="is-size-5 publication-authors">
