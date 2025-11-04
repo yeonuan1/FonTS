@@ -12,7 +12,7 @@ import numpy as np
 
 from huggingface_hub import hf_hub_download
 from einops import rearrange
-from ...annotator.util import annotator_ckpts_path
+from flux.annotator.util import annotator_ckpts_path
 
 
 class DoubleConvBlock(torch.nn.Module):

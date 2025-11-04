@@ -1,3 +1,7 @@
+"""
+통합 추론 파이프라인
+"""
+
 import re
 from PIL import Image, ExifTags
 import numpy as np

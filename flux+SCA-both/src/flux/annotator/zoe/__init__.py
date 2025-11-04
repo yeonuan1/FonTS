@@ -9,7 +9,7 @@ import torch
 from einops import rearrange
 from .zoedepth.models.zoedepth.zoedepth_v1 import ZoeDepth
 from .zoedepth.utils.config import get_config
-from ...annotator.util import annotator_ckpts_path
+from flux.annotator.util import annotator_ckpts_path
 from huggingface_hub import hf_hub_download
 
 

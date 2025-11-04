@@ -1,3 +1,7 @@
+"""
+유틸리티 및 모델 로딩
+"""
+
 import os
 from dataclasses import dataclass
 
@@ -26,6 +30,8 @@ from .annotator.hed import HEDdetector
 from .annotator.tile import TileDetector
 from .annotator.zoe import ZoeDetector
 
+# Hugging Face의 mT5 모델 이름
+MT5_MODEL_NAME = "google/mt5-base"
 
 def load_safetensors(path):
     tensors = {}
@@ -171,11 +177,11 @@ configs = {
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
-        ckpt_path=os.getenv("FLUX_DEV"),
+        ckpt_path=os.getenv("FLUX_DEV") or "/data1/FonTS/flux+SCA-both/src/models/flux1-dev.safetensors",
         params=FluxParams(
             in_channels=64,
             vec_in_dim=768,
-            context_in_dim=4096,
+            context_in_dim=4096, # 원본 flux 체크포인트(4096) 로드
             hidden_size=3072,
             mlp_ratio=4.0,
             num_heads=24,
@@ -186,7 +192,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=True,
         ),
-        ae_path=os.getenv("AE"),
+        ae_path=os.getenv("AE") or "/data1/FonTS/flux+SCA-both/src/models/ae.safetensors", # 로컬 경로 지정
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -219,7 +225,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=True,
         ),
-        ae_path=os.getenv("AE"),
+        ae_path="/data1/FonTS/flux+SCA-both/src/models/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -252,7 +258,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=False,
         ),
-        ae_path=os.getenv("AE"),
+        ae_path="/data1/FonTS/flux+SCA-both/src/models/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -306,8 +312,8 @@ def load_new_flow_model(path: str, device: str | torch.device = "cuda", hf_downl
 def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
     # Loading Flux
     print("Init model")
-    ckpt_path = "/tiamat-NAS/shiwenda/models/FLUX.1-dev/flux1-dev.safetensors" 
-    # ckpt_path = configs[name].ckpt_path
+    # ckpt_path = "/tiamat-NAS/shiwenda/models/FLUX.1-dev/flux1-dev.safetensors" 
+    ckpt_path = configs[name].ckpt_path
     if (
         ckpt_path is None
         and configs[name].repo_id is not None
@@ -328,29 +334,29 @@ def load_flow_model(name: str, device: str | torch.device = "cuda", hf_download:
         print_load_warning(missing, unexpected)
     return model
 
-def load_flow_model2(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
-    # Loading Flux
-    print("Init model")
-    ckpt_path = "/tiamat-NAS/shiwenda/models/FLUX.1-dev/flux1-dev.safetensors" 
-    # ckpt_path = configs[name].ckpt_path
-    if (
-        ckpt_path is None
-        and configs[name].repo_id is not None
-        and configs[name].repo_flow is not None
-        and hf_download
-    ):
-        ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_flow.replace("sft", "safetensors"))
+# def load_flow_model2(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
+#     # Loading Flux
+#     print("Init model")
+#     ckpt_path = "/tiamat-NAS/shiwenda/models/FLUX.1-dev/flux1-dev.safetensors" 
+#     # ckpt_path = configs[name].ckpt_path
+#     if (
+#         ckpt_path is None
+#         and configs[name].repo_id is not None
+#         and configs[name].repo_flow is not None
+#         and hf_download
+#     ):
+#         ckpt_path = hf_hub_download(configs[name].repo_id, configs[name].repo_flow.replace("sft", "safetensors"))
 
-    with torch.device("meta" if ckpt_path is not None else device):
-        model = Flux(configs[name].params)
+#     with torch.device("meta" if ckpt_path is not None else device):
+#         model = Flux(configs[name].params)
 
-    if ckpt_path is not None:
-        print("Loading checkpoint")
-        # load_sft doesn't support torch.device
-        sd = load_sft(ckpt_path, device=str(device))
-        missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
-        print_load_warning(missing, unexpected)
-    return model
+#     if ckpt_path is not None:
+#         print("Loading checkpoint")
+#         # load_sft doesn't support torch.device
+#         sd = load_sft(ckpt_path, device=str(device))
+#         missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
+#         print_load_warning(missing, unexpected)
+#     return model
 
 def load_flow_model_quintized(name: str, device: str | torch.device = "cuda", hf_download: bool = True):
     # Loading Flux
@@ -388,15 +394,17 @@ def load_controlnet(name, device, transformer=None):
 def load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
     # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
     # return HFEmbedder("xlabs-ai/xflux_text_encoders", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
-    return HFEmbedder("/tiamat-NAS/shiwenda/models/FLUX.1-dev/text_encoder_2", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
+    # return HFEmbedder("/tiamat-NAS/shiwenda/models/FLUX.1-dev/text_encoder_2", max_length=max_length, torch_dtype=torch.bfloat16).to(device)
+    return HFEmbedder(MT5_MODEL_NAME, max_length=max_length, torch_dtype=torch.bfloat16).to(device)
 
 def load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
     # return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
-    return HFEmbedder("/tiamat-NAS/shiwenda/models/FLUX.1-dev/text_encoder", max_length=77, torch_dtype=torch.bfloat16).to(device)
+    return HFEmbedder("openai/clip-vit-large-patch14", max_length=77, torch_dtype=torch.bfloat16).to(device)
 
 
 def load_ae(name: str, device: str | torch.device = "cuda", hf_download: bool = True) -> AutoEncoder:
-    ckpt_path = '/tiamat-NAS/shiwenda/models/FLUX.1-dev/ae.safetensors' # configs[name].ae_path
+    ckpt_path = ckpt_path = configs[name].ae_path
+
     if (
         ckpt_path is None
         and configs[name].repo_id is not None

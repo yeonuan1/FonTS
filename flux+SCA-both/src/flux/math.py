@@ -1,3 +1,12 @@
+"""
+Attention 매커니즘과 관련된 핵심 수학 연산들을 정의
+
+Rotary Ponsitional Embedding(RoPE, 회전 위치 임베딩)
+MM-DiT 블록 내부에서 Self-attention 및 Cross-attention을 수행할 때 
+각 이미지 패치 토큰의 위치 정보와 텍스트 토큰의 위치 정보를 정확하게 반영
+이미지 생성의 공간적 일관성과 조건부 정확도를 높임
+"""
+
 import torch
 from einops import rearrange
 from torch import Tensor

@@ -1,3 +1,10 @@
+"""
+FonTS 모델의 기반이 되는 FLUX 모델을 커맨드 라인 인터페이스(CLI)를 통해 실행하여 
+텍스트-이미지 생성(Text-to-Image Generation)을 수행
+
+- 훈련이 아닌 추론 및 사용자 상호작용 담당
+"""
+
 import os
 import re
 import time
@@ -9,9 +16,13 @@ from einops import rearrange
 from fire import Fire
 from PIL import ExifTags, Image
 
+# Diffusion model의 핵심 추론 로직(노이즈 제거, 노이즈 생성, 스케줄링)
 from flux.sampling import denoise, get_noise, get_schedule, prepare, unpack
-from flux.util import (configs, embed_watermark, load_ae, load_clip,
-                       load_flow_model, load_t5)
+
+# T5, CLIP, AutoEncoder, FLUX 모델 자체 등 모든 주요 컴포넌트를 로드하는 유틸리티를 가져옴
+from flux.util import (configs, embed_watermark, load_ae, load_clip, load_flow_model, load_t5)
+
+# Huggingface 파이프라인을 사용하여 NSFW 감지 모델 로드
 from transformers import pipeline
 
 NSFW_THRESHOLD = 0.85
@@ -26,6 +37,8 @@ class SamplingOptions:
     seed: int | None
 
 
+# CLI 환경에서 사용자가 프롬프트나 파라미터를 동적으로 변경할 수 있도록 함
+# 모델을 한 번 로드한 후 여러 이미지를 빠르게 실험해볼 수 있음
 def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
     user_question = "Next prompt (write /h for help, /q to quit and leave empty to repeat):\n"
     usage = (
@@ -92,7 +105,7 @@ def parse_prompt(options: SamplingOptions) -> SamplingOptions | None:
         options.prompt = prompt
     return options
 
-
+# 주요 이미지 생성 루틴
 @torch.inference_mode()
 def main(
     name: str = "flux-schnell",

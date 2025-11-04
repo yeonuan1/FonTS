@@ -1,3 +1,9 @@
+"""
+FLUX 기반 ControlNet 모듈을 정의
+주요 FLUX/DiT 백본의 구조를 복제하면서 추가적인 조건 이미지를 입력받아 중간 특징 맵을 출력
+이를 메인 Diffusion Model에 주입함으로써 이미지를 구조적으로 제어
+"""
+
 from dataclasses import dataclass
 
 import torch
@@ -52,6 +58,8 @@ class ControlNetFlux(nn.Module):
         self.hidden_size = params.hidden_size
         self.num_heads = params.num_heads
         self.pe_embedder = EmbedND(dim=pe_dim, theta=params.theta, axes_dim=params.axes_dim)
+        
+        # 입력 임베딩
         self.img_in = nn.Linear(self.in_channels, self.hidden_size, bias=True)
         self.time_in = MLPEmbedder(in_dim=256, hidden_dim=self.hidden_size)
         self.vector_in = MLPEmbedder(params.vec_in_dim, self.hidden_size)
@@ -60,6 +68,7 @@ class ControlNetFlux(nn.Module):
         )
         self.txt_in = nn.Linear(params.context_in_dim, self.hidden_size)
 
+        # MM-DiT 블록
         self.double_blocks = nn.ModuleList(
             [
                 DoubleStreamBlock(
@@ -156,6 +165,7 @@ class ControlNetFlux(nn.Module):
         for name, module in self.named_children():
             fn_recursive_attn_processor(name, module, processor)
 
+    # controlnet 조건을 이미지 입력에 주입하고 중간 결과를 추출하여 반환함
     def forward(
         self,
         img: Tensor,
