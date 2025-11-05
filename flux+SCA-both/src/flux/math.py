@@ -28,7 +28,7 @@ def rope(pos: Tensor, dim: int, theta: int) -> Tensor:
     out = torch.einsum("...n,d->...nd", pos, omega)
     out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
     out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
-    return out.float()
+    return out.float().to(pos.device)
 
 
 def apply_rope(xq: Tensor, xk: Tensor, freqs_cis: Tensor) -> tuple[Tensor, Tensor]:

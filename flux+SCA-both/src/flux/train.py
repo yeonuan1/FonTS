@@ -35,6 +35,8 @@ MODEL_TYPE = "flux-dev"
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 1 # 메모리 제약을 고려하여 1로 설정
 NUM_EPOCHS = 10
+# ⭐ 추가: Guidance Distillation Strength 설정
+GUIDANCE_STRENGTH = 7.0 # 일반적인 값 (4.0 ~ 10.0 사이에서 테스트 필요)
 
 # --- T5/mT5 로딩 함수 정의 (실제 모듈을 모방한 Dummy 클래스) ---
 MT5_MODEL_NAME = "google/mt5-base" # mT5 사용을 위해 로딩 이름 정의
@@ -394,9 +396,17 @@ def train_fonts_tc_ft_mt5(model_type=MODEL_TYPE, metadata_path='metadata.jsonl',
                 
             # (B) 노이즈 샘플링 및 zt 계산
             batch_size = x0_latent.shape[0]
-            t = torch.rand(batch_size, device=DEVICE)
-            epsilon = torch.randn_like(x0_latent, device=DEVICE)
+            t = torch.rand(batch_size, device=DEVICE, dtype=torch.bfloat16)
+            epsilon = torch.randn_like(x0_latent, device=DEVICE, dtype=torch.bfloat16)
             zt = x0_latent * (1 - t)[:, None, None, None] + epsilon * t[:, None, None, None]
+
+            # ⭐⭐ 새로운 guidance 텐서 생성 (Batch Size와 동일하게)
+            guidance_tensor = torch.full(
+                (batch_size,), 
+                GUIDANCE_STRENGTH, # 상단에서 정의한 값
+                device=DEVICE, 
+                dtype=torch.bfloat16 # bfloat16으로 생성
+            )
 
             # (C) 조건부 텐서 준비 ⭐ 수정 필요
             inp_cond = prepare(
@@ -409,12 +419,21 @@ def train_fonts_tc_ft_mt5(model_type=MODEL_TYPE, metadata_path='metadata.jsonl',
             
             inp_cond = to_bfloat16_dict(inp_cond)
 
+            # 디버깅 출력 추가
+            print(f"DEBUG: inp_cond['txt'] shape before projection: {inp_cond['txt'].shape}")
 
             # ⭐ mT5 임베딩을 Projection Layer로 변환
             # inp_cond['txt']는 (B, L, 768) 형태
             # Text Projection (bfloat16 유지)
             txt_projected = pipeline.text_proj(inp_cond['txt'].to(torch.bfloat16))  # (B, L, 4096)
             
+            # 디버깅 출력 추가
+            print(f"DEBUG: txt_projected shape after projection: {txt_projected.shape}") 
+            print(f"DEBUG: txt_ids shape: {inp_cond['txt_ids'].shape}") 
+            print(f"DEBUG: img shape: {inp_cond['img'].shape}") 
+            print(f"DEBUG: img_ids shape: {inp_cond['img_ids'].shape}")
+
+
             # (D) Flux MM-DiT 순전파
             noise_pred = pipeline.model(
                 img=inp_cond['img'],
@@ -423,6 +442,7 @@ def train_fonts_tc_ft_mt5(model_type=MODEL_TYPE, metadata_path='metadata.jsonl',
                 txt_ids=inp_cond['txt_ids'],
                 timesteps=t,
                 y=inp_cond['vec'],
+                guidance=guidance_tensor,
             )
             
             # (E) 손실 계산

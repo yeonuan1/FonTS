@@ -20,7 +20,7 @@ class EmbedND(nn.Module):
         emb = torch.cat(
             [rope(ids[..., i], self.axes_dim[i], self.theta) for i in range(n_axes)],
             dim=-3,
-        )
+        ).to(ids.device) # CUDA로 명시적 이동
 
         return emb.unsqueeze(1)
 
@@ -166,8 +166,30 @@ class Modulation(nn.Module):
         self.multiplier = 6 if double else 3
         self.lin = nn.Linear(dim, self.multiplier * dim, bias=True)
 
+#     def forward(self, vec: Tensor) -> tuple[ModulationOut, ModulationOut | None]:
+#         out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
+
+#         return (
+#             ModulationOut(*out[:3]),
+#             ModulationOut(*out[3:]) if self.is_double else None,
+#         )
+
     def forward(self, vec: Tensor) -> tuple[ModulationOut, ModulationOut | None]:
-        out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
+        
+        # 🚨 수정된 부분: 입력 'vec'의 시퀀스 차원(길이)이 1보다 크면 평균 풀링
+        if vec.ndim == 3: # (B, L, D) 형태일 경우 (L=50)
+            if vec.shape[1] > 1:
+                # 시퀀스 차원(L)을 따라 평균 풀링하여 (B, D) 형태로 만듦
+                vec = vec.mean(dim=1)
+            else:
+                # L=1인 경우, 차원 제거 (B, 1, D) -> (B, D)
+                vec = vec.squeeze(1)
+
+        # 현재 vec의 shape: (B, D)
+        
+        # [None, :] 대신 torch.unsqueeze(1)을 사용하여 (B, 1, D)를 만듭니다.
+        # 기존: out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
+        out = self.lin(nn.functional.silu(vec)).unsqueeze(1).chunk(self.multiplier, dim=-1)
 
         return (
             ModulationOut(*out[:3]),
