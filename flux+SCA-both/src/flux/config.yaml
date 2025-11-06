@@ -1,0 +1,39 @@
+# config.yaml
+
+model:
+  flux_model_type: "flux-dev"
+  mt5_model_name: "google/mt5-base"
+  siglip_model_name: "google/siglip-base-patch16-224"
+  
+  # ETC 특수 토큰
+  etc_tokens: ['<i>', '</i>', '<b>', '</b>', '<c>', '</c>']
+  
+  # LoRA 설정
+  use_lora: true
+  lora_rank: 4 # 임시
+
+data:
+  metadata_path: "/home/shaush/FonTS/tc-dataset/meta.jsonl"
+  image_base_path: "/home/shaush/FonTS/tc-dataset"
+  num_workers: 4
+
+training:
+  num_epochs: 10
+  batch_size: 1 # GPU당 배치 크기
+  learning_rate: 1.0e-5
+  guidance_strength: 7.0
+  
+  # accelerate 설정
+  mixed_precision: "bf16"  # "no", "fp16", "bf16"
+  gradient_accumulation_steps: 1 # 8, 16 등으로 늘려 유효 배치 크기 증가 가능
+  gradient_checkpointing: true
+
+logging:
+  output_dir: "checkpoints_configurable" # 체크포인트 저장 경로
+  log_every: 10     # 10 스텝마다 로그 출력
+  save_every: 1000  # 1000 스텝마다 체크포인트 저장
+  
+  # Weights & Biases (wandb)
+  use_wandb: true
+  wandb_project: "fonts-finetune-mt5-siglip"
+  wandb_run_name: "flux-lora-run-1"
