@@ -1,3 +1,15 @@
+<<<<<<< HEAD
+=======
+"""
+Attention 매커니즘과 관련된 핵심 수학 연산들을 정의
+
+Rotary Ponsitional Embedding(RoPE, 회전 위치 임베딩)
+MM-DiT 블록 내부에서 Self-attention 및 Cross-attention을 수행할 때 
+각 이미지 패치 토큰의 위치 정보와 텍스트 토큰의 위치 정보를 정확하게 반영
+이미지 생성의 공간적 일관성과 조건부 정확도를 높임
+"""
+
+>>>>>>> theirs/main
 import torch
 from einops import rearrange
 from torch import Tensor
@@ -19,7 +31,11 @@ def rope(pos: Tensor, dim: int, theta: int) -> Tensor:
     out = torch.einsum("...n,d->...nd", pos, omega)
     out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
     out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
+<<<<<<< HEAD
     return out.float()
+=======
+    return out.float().to(pos.device)
+>>>>>>> theirs/main
 
 
 def apply_rope(xq: Tensor, xk: Tensor, freqs_cis: Tensor) -> tuple[Tensor, Tensor]:

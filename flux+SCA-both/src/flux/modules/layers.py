@@ -20,7 +20,11 @@ class EmbedND(nn.Module):
         emb = torch.cat(
             [rope(ids[..., i], self.axes_dim[i], self.theta) for i in range(n_axes)],
             dim=-3,
+<<<<<<< HEAD
         )
+=======
+        ).to(ids.device) # CUDA로 명시적 이동
+>>>>>>> theirs/main
 
         return emb.unsqueeze(1)
 
@@ -98,13 +102,24 @@ class LoRALinearLayer(nn.Module):
         nn.init.zeros_(self.up.weight)
 
     def forward(self, hidden_states):
+<<<<<<< HEAD
         down_hidden_states = self.down(hidden_states)
+=======
+        orig_dtype = hidden_states.dtype
+        dtype = self.down.weight.dtype
+
+        down_hidden_states = self.down(hidden_states.to(dtype))
+>>>>>>> theirs/main
         up_hidden_states = self.up(down_hidden_states)
 
         if self.network_alpha is not None:
             up_hidden_states *= self.network_alpha / self.rank
 
+<<<<<<< HEAD
         return up_hidden_states
+=======
+        return up_hidden_states.to(orig_dtype)
+>>>>>>> theirs/main
 
 class FLuxSelfAttnProcessor:
     def __call__(self, attn, x, pe, **attention_kwargs):
@@ -163,8 +178,35 @@ class Modulation(nn.Module):
         self.multiplier = 6 if double else 3
         self.lin = nn.Linear(dim, self.multiplier * dim, bias=True)
 
+<<<<<<< HEAD
     def forward(self, vec: Tensor) -> tuple[ModulationOut, ModulationOut | None]:
         out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
+=======
+#     def forward(self, vec: Tensor) -> tuple[ModulationOut, ModulationOut | None]:
+#         out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
+
+#         return (
+#             ModulationOut(*out[:3]),
+#             ModulationOut(*out[3:]) if self.is_double else None,
+#         )
+
+    def forward(self, vec: Tensor) -> tuple[ModulationOut, ModulationOut | None]:
+        
+        # 🚨 수정된 부분: 입력 'vec'의 시퀀스 차원(길이)이 1보다 크면 평균 풀링
+        if vec.ndim == 3: # (B, L, D) 형태일 경우 (L=50)
+            if vec.shape[1] > 1:
+                # 시퀀스 차원(L)을 따라 평균 풀링하여 (B, D) 형태로 만듦
+                vec = vec.mean(dim=1)
+            else:
+                # L=1인 경우, 차원 제거 (B, 1, D) -> (B, D)
+                vec = vec.squeeze(1)
+
+        # 현재 vec의 shape: (B, D)
+        
+        # [None, :] 대신 torch.unsqueeze(1)을 사용하여 (B, 1, D)를 만듭니다.
+        # 기존: out = self.lin(nn.functional.silu(vec))[:, None, :].chunk(self.multiplier, dim=-1)
+        out = self.lin(nn.functional.silu(vec)).unsqueeze(1).chunk(self.multiplier, dim=-1)
+>>>>>>> theirs/main
 
         return (
             ModulationOut(*out[:3]),
@@ -172,12 +214,21 @@ class Modulation(nn.Module):
         )
 
 class DoubleStreamBlockLoraProcessor(nn.Module):
+<<<<<<< HEAD
     def __init__(self, dim: int, rank=4, network_alpha=None, lora_weight=1, dtype=None):
         super().__init__()
         self.qkv_lora1 = LoRALinearLayer(dim, dim * 3, rank, network_alpha, dtype=dtype)
         self.proj_lora1 = LoRALinearLayer(dim, dim, rank, network_alpha, dtype=dtype)
         self.qkv_lora2 = LoRALinearLayer(dim, dim * 3, rank, network_alpha, dtype=dtype)
         self.proj_lora2 = LoRALinearLayer(dim, dim, rank, network_alpha, dtype=dtype)
+=======
+    def __init__(self, dim: int, rank=4, network_alpha=None, lora_weight=1):
+        super().__init__()
+        self.qkv_lora1 = LoRALinearLayer(dim, dim * 3, rank, network_alpha)
+        self.proj_lora1 = LoRALinearLayer(dim, dim, rank, network_alpha)
+        self.qkv_lora2 = LoRALinearLayer(dim, dim * 3, rank, network_alpha)
+        self.proj_lora2 = LoRALinearLayer(dim, dim, rank, network_alpha)
+>>>>>>> theirs/main
         self.lora_weight = lora_weight
 
     def forward(self, attn, img, txt, vec, pe, **attention_kwargs):
@@ -453,10 +504,17 @@ class IPSingleStreamBlockProcessor(nn.Module):
 
 
 class SingleStreamBlockLoraProcessor(nn.Module):
+<<<<<<< HEAD
     def __init__(self, dim: int, rank: int = 4, network_alpha = None, lora_weight: float = 1, dtype=None):
         super().__init__()
         self.qkv_lora = LoRALinearLayer(dim, dim * 3, rank, network_alpha, dtype=dtype)
         self.proj_lora = LoRALinearLayer(15360, dim, rank, network_alpha, dtype=dtype)
+=======
+    def __init__(self, dim: int, rank: int = 4, network_alpha = None, lora_weight: float = 1):
+        super().__init__()
+        self.qkv_lora = LoRALinearLayer(dim, dim * 3, rank, network_alpha)
+        self.proj_lora = LoRALinearLayer(15360, dim, rank, network_alpha)
+>>>>>>> theirs/main
         self.lora_weight = lora_weight
 
     def forward(self, attn: nn.Module, x: Tensor, vec: Tensor, pe: Tensor) -> Tensor:
@@ -589,3 +647,7 @@ class ImageProjModel(torch.nn.Module):
         )
         clip_extra_context_tokens = self.norm(clip_extra_context_tokens)
         return clip_extra_context_tokens
+<<<<<<< HEAD
+=======
+
+>>>>>>> theirs/main
