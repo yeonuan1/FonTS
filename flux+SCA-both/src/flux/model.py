@@ -1,12 +1,9 @@
-<<<<<<< HEAD
-=======
 """
 FLUX의 전체 구조 정의
 MM-DiT 아키텍처
 """
 
 
->>>>>>> theirs/main
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -17,11 +14,7 @@ from einops import rearrange
 from .modules.layers import (DoubleStreamBlock, EmbedND, LastLayer,
                                  MLPEmbedder, SingleStreamBlock,
                                  timestep_embedding)
-<<<<<<< HEAD
 from accelerate.utils import is_torch_version
-=======
-
->>>>>>> theirs/main
 
 @dataclass
 class FluxParams:
@@ -189,15 +182,9 @@ class Flux(nn.Module):
                             return module(*inputs)
 
                     return custom_forward
-<<<<<<< HEAD
                 
                 # --- 💥 수정 1: 변수명을 (img, txt)로 바꾸고 use_reentrant=False 추가 ---
                 img, txt = torch.utils.checkpoint.checkpoint(
-=======
-
-                ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
-                encoder_hidden_states, hidden_states = torch.utils.checkpoint.checkpoint(
->>>>>>> theirs/main
                     create_custom_forward(block),
                     img,
                     txt,
@@ -205,10 +192,7 @@ class Flux(nn.Module):
                     pe,
                     image_proj,
                     ip_scale,
-<<<<<<< HEAD
                     use_reentrant=False # 경고 제거
-=======
->>>>>>> theirs/main
                 )
             else:
                 img, txt = block(
@@ -237,29 +221,17 @@ class Flux(nn.Module):
 
                     return custom_forward
 
-<<<<<<< HEAD
                 # --- 💥 수정 2: 변수 1개(img)로 받고 use_reentrant=False 추가 ---
                 img = torch.utils.checkpoint.checkpoint(
-=======
-                ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
-                encoder_hidden_states, hidden_states = torch.utils.checkpoint.checkpoint(
->>>>>>> theirs/main
                     create_custom_forward(block),
                     img,
                     vec,
                     pe,
-<<<<<<< HEAD
                     use_reentrant=False # 경고 제거
-=======
->>>>>>> theirs/main
                 )
             else:
                 img = block(img, vec=vec, pe=pe,image_proj=image_proj,ip_scale=ip_scale,)
         img = img[:, txt.shape[1] :, ...]
 
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
-<<<<<<< HEAD
         return img
-=======
-        return img
->>>>>>> theirs/main

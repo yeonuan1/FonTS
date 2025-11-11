@@ -177,11 +177,7 @@ configs = {
         repo_id_ae="black-forest-labs/FLUX.1-dev",
         repo_flow="flux1-dev.safetensors",
         repo_ae="ae.safetensors",
-<<<<<<< HEAD
-        ckpt_path=os.getenv("FLUX_DEV") or "/home/shaush/FonTS/flux+SCA-both/models/flux1-dev.safetensors",
-=======
-        ckpt_path=os.getenv("FLUX_DEV") or "/data1/FonTS/flux+SCA-both/src/models/flux1-dev.safetensors",
->>>>>>> theirs/main
+        ckpt_path=os.getenv("FLUX_DEV") or "/data1/FonTS/models/flux1-dev.safetensors",
         params=FluxParams(
             in_channels=64,
             vec_in_dim=768,
@@ -196,11 +192,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=True,
         ),
-<<<<<<< HEAD
         ae_path=os.getenv("AE") or None, # 로컬 경로 지정
-=======
-        ae_path=os.getenv("AE") or "/data1/FonTS/flux+SCA-both/src/models/ae.safetensors", # 로컬 경로 지정
->>>>>>> theirs/main
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -233,7 +225,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=True,
         ),
-        ae_path="/data1/FonTS/flux+SCA-both/src/models/ae.safetensors",
+        ae_path="/data1/FonTS/models/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -266,7 +258,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=False,
         ),
-        ae_path="/data1/FonTS/flux+SCA-both/src/models/ae.safetensors",
+        ae_path="/data1/FonTS/models/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,

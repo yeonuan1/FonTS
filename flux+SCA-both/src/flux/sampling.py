@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-=======
-"""
-핵심 추론 모듈
-
-노이즈 생성부터 시작하여 최종적으로 노이즈 제거 루프를 실행
-"""
-
->>>>>>> theirs/main
 import math
 from typing import Callable
 
@@ -89,11 +80,7 @@ def prepare_t5(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list
 
 
 
-<<<<<<< HEAD
 def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
-=======
-def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str], dtype=torch.bfloat16) -> dict[str, Tensor]:
->>>>>>> theirs/main
     bs, c, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
@@ -109,11 +96,7 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
 
     if isinstance(prompt, str):
         prompt = [prompt]
-<<<<<<< HEAD
     txt = t5(prompt)
-=======
-    txt = t5(prompt) # t5 임베딩 생성
->>>>>>> theirs/main
     if txt.shape[0] == 1 and bs > 1:
         txt = repeat(txt, "1 ... -> bs ...", bs=bs)
     txt_ids = torch.zeros(bs, txt.shape[1], 3)
@@ -123,19 +106,11 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[st
         vec = repeat(vec, "1 ... -> bs ...", bs=bs)
 
     return {
-<<<<<<< HEAD
         "img": img,
         "img_ids": img_ids.to(img.device),
         "txt": txt.to(img.device),
         "txt_ids": txt_ids.to(img.device),
         "vec": vec.to(img.device),
-=======
-        'img': img.to(dtype),
-        'img_ids': img_ids.to(dtype),
-        'txt': txt.to(dtype),
-        'txt_ids': txt_ids.to(dtype),
-        'vec': vec.to(dtype)
->>>>>>> theirs/main
     }
 
 
