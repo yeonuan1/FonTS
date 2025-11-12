@@ -435,7 +435,7 @@ def render_quotes_from_csv(
 def main():
     parser = argparse.ArgumentParser(description="Render Korean quotes with style variations (b/i/u) to images and emit JSONL metadata.")
     parser.add_argument("--csv", required=True, help="Path to CSV file with a 'quote' column (UTF-8).")
-    parser.add_argument("--out", required=True, help="Output directory for images & metadata.jsonl.")
+    parser.add_argument("--out", required=True, help="Output directory for images & meta.jsonl.")
     parser.add_argument("--font", default=None, help="Path to TTF/OTF font supporting Korean.")
     parser.add_argument("--size", type=int, default=1024, help="Image size (square). Default 1024.")
     parser.add_argument("--padding_ratio", type=float, default=0.08, help="Padding as ratio of image size. Default 0.08.")

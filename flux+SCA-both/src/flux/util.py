@@ -225,7 +225,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=True,
         ),
-        ae_path="/data1/FonTS/flux+SCA-both/src/models/ae.safetensors",
+        ae_path="/data1/FonTS/models/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,
@@ -258,7 +258,7 @@ configs = {
             qkv_bias=True,
             guidance_embed=False,
         ),
-        ae_path="/data1/FonTS/flux+SCA-both/src/models/ae.safetensors",
+        ae_path="/data1/FonTS/models/ae.safetensors",
         ae_params=AutoEncoderParams(
             resolution=256,
             in_channels=3,

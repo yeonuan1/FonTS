@@ -23,8 +23,8 @@ model:
     - "linear2"
 
 data:
-  metadata_path: "/home/shaush/FonTS/tc-dataset/meta.jsonl"
-  image_base_path: "/home/shaush/FonTS/tc-dataset"
+  metadata_path: "/data1/FonTS/flux+SCA-both/src/flux/tc-dataset/meta.jsonl"
+  image_base_path: "/data1/FonTS/flux+SCA-both/src/flux/tc-dataset"
   num_workers: 4
   resolution: 512
 
