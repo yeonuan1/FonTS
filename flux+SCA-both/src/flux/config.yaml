@@ -1,39 +1,51 @@
 # config.yaml
-
 model:
   flux_model_type: "flux-dev"
   mt5_model_name: "google/mt5-base"
   siglip_model_name: "google/siglip-base-patch16-224"
   
   # ETC 특수 토큰
-  etc_tokens: ['<i>', '</i>', '<b>', '</b>', '<c>', '</c>']
+  etc_tokens: ['<i>', '</i>', '<b>', '</b>', '<u>', '</u>']
   
   # LoRA 설정
   use_lora: true
-  lora_rank: 4 # 임시
+  lora_rank: 8 # 임시
+  lora_target_modules:
+    - "img_attn.qkv"
+    - "img_attn.proj"
+    - "txt_attn.qkv"
+    - "txt_attn.proj"
+    - "img_mlp.0"
+    - "img_mlp.2"
+    - "txt_mlp.0"
+    - "txt_mlp.2"
+    - "linear1"
+    - "linear2"
 
 data:
   metadata_path: "/home/shaush/FonTS/tc-dataset/meta.jsonl"
   image_base_path: "/home/shaush/FonTS/tc-dataset"
   num_workers: 4
+  resolution: 512
 
 training:
-  num_epochs: 10
-  batch_size: 1 # GPU당 배치 크기
+  num_epochs: 100
+  batch_size: 40 # GPU당 배치 크기
   learning_rate: 1.0e-5
   guidance_strength: 7.0
   
-  # accelerate 설정
-  mixed_precision: "bf16"  # "no", "fp16", "bf16"
-  gradient_accumulation_steps: 1 # 8, 16 등으로 늘려 유효 배치 크기 증가 가능
+  # accelerate config
+  mixed_precision: "bf16" 
+  gradient_accumulation_steps: 4 # 1, 8, 16 등으로 늘려 유효 배치 크기 증가 
   gradient_checkpointing: true
 
 logging:
-  output_dir: "checkpoints_configurable" # 체크포인트 저장 경로
-  log_every: 10     # 10 스텝마다 로그 출력
-  save_every: 1000  # 1000 스텝마다 체크포인트 저장
-  
-  # Weights & Biases (wandb)
-  use_wandb: true
+  output_dir: "./outputs" # 체크포인트 저장 경로
+  log_every: 50     
+  save_every: 150 
+  save_total_limit: 5
+
+  # Weights & Biases 
+  use_wandb: false
   wandb_project: "fonts-finetune-mt5-siglip"
   wandb_run_name: "flux-lora-run-1"
