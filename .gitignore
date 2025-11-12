@@ -4,7 +4,6 @@
 # 대용량 파일들
 flux+SCA-both/src/models/
 flux+SCA-only/
-<<<<<<< HEAD
 flux+SCA-both/src/wandb/
 flux+SCA-both/fonts/
 flux+SCA-both/logs/
@@ -14,9 +13,7 @@ flux+SCA-both/wandb/
 flux+SCA-both/checkpoints/
 flux+SCA-both/tc-dataset/
 flux+SCA-both/tc-dataset/
-=======
 
->>>>>>> theirs/main
 # Python cache files
 __pycache__/
 *.pyc

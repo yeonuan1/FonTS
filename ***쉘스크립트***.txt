@@ -1,0 +1,19 @@
+쉘스크립트 사용과 sbatch
+
+chmod +x /home/shaush/FonTS/flux+SCA-both/scripts/experiment.sh
+
+new training:
+sbatch /home/shaush/FonTS-main/flux+SCA-both/experiment.sh
+
+resume:
+sbatch /home/shaush/FonTS-main/flux+SCA-both/experiment.sh --resume_from_checkpoint /home/shaush/FonTS-main/flux+SCA-both/src/outputs/step-800
+
+squeue -u $USER
+squeue --start -u $USER
+
+scontrol show job 794953
+
+sacct -j 794953
+scancel 
+
+비우기: truncate -s 0 /home/shaush/FonTS-main/flux+SCA-both/src/slurm_logs/fonts_train_795006.err

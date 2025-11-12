@@ -1,5 +1,15 @@
 # train.py
+"""
+**initiate training**
+cd /home/shaush/FonTS-main/flux+SCA-both/src
+accelerate launch -m flux.train --config flux/config.yaml
 
+**resume from checkpoint**
+cd /home/shaush/FonTS-main/flux+SCA-both/src
+accelerate launch -m flux.train \
+    --config flux/config.yaml \
+    --resume_from_checkpoint /home/shaush/FonTS-main/flux+SCA-both/src/outputs/step-6000
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,7 +23,7 @@ import math
 import os
 import numpy as np
 import json
-import yaml # PyYAML (pip install pyyaml)
+import yaml
 import argparse
 from PIL import Image
 from einops import rearrange, repeat
@@ -22,8 +32,7 @@ from pathlib import Path
 
 from accelerate import Accelerator
 import wandb
-
-# flux imports
+from peft import LoraConfig
 from flux.util import load_flow_model, load_ae
 from flux.modules.layers import (
     DoubleStreamBlockLoraProcessor, 
@@ -31,13 +40,11 @@ from flux.modules.layers import (
     timestep_embedding
 )
 
-# Helper Functions/Classes 
-
-class TextProjection(nn.Module): # <-- 수정된 코드
-    def __init__(self, input_dim=768, output_dim=4096, dtype=None): # 1. dtype 받기
+# Helper Functions/Classes
+class TextProjection(nn.Module): 
+    def __init__(self, input_dim=768, output_dim=4096, dtype=None): 
         super().__init__()
         self.proj = nn.Sequential(
-            # vvv 2. 받은 dtype을 nn.Linear와 LayerNorm에 전달 vvv
             nn.Linear(input_dim, output_dim, dtype=dtype),
             nn.LayerNorm(output_dim, dtype=dtype),
         )
@@ -45,12 +52,14 @@ class TextProjection(nn.Module): # <-- 수정된 코드
         return self.proj(x)
 
 class TCDataset(Dataset):
-    def __init__(self, metadata_path: str, image_base_path: str = './'):
+    def __init__(self, metadata_path: str, image_base_path: str = './', resolution: int = 512):
         self.metadata = []
         with open(metadata_path, 'r', encoding='utf-8') as f:
             for line in f:
                 self.metadata.append(json.loads(line))
         self.image_base_path = image_base_path
+        self.resolution = resolution
+
     def __len__(self):
         return len(self.metadata)
     def __getitem__(self, idx):
@@ -60,6 +69,7 @@ class TCDataset(Dataset):
         image_path = os.path.join(self.image_base_path, item['id'] + '.jpg')
         try:
             image = Image.open(image_path).convert("RGB")
+            image = image.resize((self.resolution, self.resolution), Image.Resampling.LANCZOS)
             image_tensor = torch.from_numpy(np.array(image)).permute(2, 0, 1).float() 
             image_tensor = (image_tensor / 127.5) - 1.0 
         except Exception as e:
@@ -75,7 +85,7 @@ def custom_collate_fn(batch):
     images_batch = torch.stack(images)
     return images_batch, prompts_plain, prompts_html
 
-def load_mt5_with_etc_tokens(model_name: str, etc_tokens: list, device="cpu"): # <-- Load to CPU
+def load_mt5_with_etc_tokens(model_name: str, etc_tokens: list, device="cpu"): 
     print(f"Loading mT5 model: {model_name}")
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5EncoderModel.from_pretrained(model_name)
@@ -83,52 +93,62 @@ def load_mt5_with_etc_tokens(model_name: str, etc_tokens: list, device="cpu"): #
     print(f"Added {len(etc_tokens)} new ETC tokens to mT5 tokenizer.")
     model.resize_token_embeddings(len(tokenizer))
     print(f"Resized mT5 model embeddings to {len(tokenizer)}.")
-    # Load to CPU, not device
     return model.to(device, dtype=torch.bfloat16), tokenizer 
 
-def load_siglip(model_name: str, device="cpu"): # <-- Load to CPU
+def load_siglip(model_name: str, device="cpu"): 
     print(f"Loading SigLIP model: {model_name}")
     tokenizer = AutoProcessor.from_pretrained(model_name).tokenizer
     model = SiglipTextModel.from_pretrained(model_name)
-    # Load to CPU, not device
     return model.to(device, dtype=torch.bfloat16), tokenizer 
 
 
-def apply_lora_to_model(model, rank: int, hidden_size: int, device, dtype): # <-- 수정: dtype 인자 추가
-    """
-    (FIXED) Finds all relevant attention processors and replaces them
-    with LoRA-enabled processors.
-    """
+def apply_lora_to_model(model, cfg_model: dict, device):
+    rank = cfg_model['lora_rank']
+    hidden_size = model.hidden_size
+    target_modules = set(cfg_model.get('lora_target_modules', []))
+
+    double_block_targets = {
+        "img_attn.qkv", "img_attn.proj", "txt_attn.qkv", 
+        "txt_attn.proj", "img_mlp.0", "img_mlp.2", 
+        "txt_mlp.0", "txt_mlp.2"
+    }
+    single_block_targets = {"linear1", "linear2"}
+
+    apply_to_double = any(t in target_modules for t in double_block_targets)
+    apply_to_single = any(t in target_modules for t in single_block_targets)
+
+    if not (apply_to_double or apply_to_single):
+        print("⚠️ WARNING: 'use_lora: true'이지만 'lora_target_modules'가 비어있거나 알려진 타겟과 일치하지 않습니다. LoRA 레이어가 적용되지 않습니다.")
+        return
+
+    if apply_to_double:
+        print(f"✅ Config 'lora_target_modules' 감지: DoubleStreamBlocks에 LoRA(rank={rank})를 적용합니다.")
+    if apply_to_single:
+        print(f"✅ Config 'lora_target_modules' 감지: SingleStreamBlocks에 LoRA(rank={rank})를 적용합니다.")
+
     lora_attn_procs = {}
     total_replaced = 0
 
-    # Iterate over the *existing* processors
     for name, processor in model.attn_processors.items():
-        if name.startswith("double_blocks"):
+        if apply_to_double and name.startswith("double_blocks"):
             lora_attn_procs[name] = DoubleStreamBlockLoraProcessor(
-                dim=hidden_size, rank=rank, dtype=dtype # <-- 수정: dtype 전달
-            ).to(device) # <-- .to(device)는 유지
+                dim=hidden_size, rank=rank
+            ).to(device, dtype=torch.bfloat16)
             total_replaced += 1
-        elif name.startswith("single_blocks"):
+        elif apply_to_single and name.startswith("single_blocks"):
             lora_attn_procs[name] = SingleStreamBlockLoraProcessor(
-                dim=hidden_size, rank=rank, dtype=dtype # <-- 수정: dtype 전달
-            ).to(device) # <-- .to(device)는 유지
+                dim=hidden_size, rank=rank
+            ).to(device, dtype=torch.bfloat16)
             total_replaced += 1
         else:
-            # Keep the original processor if it's not a target
             lora_attn_procs[name] = processor
             
     if total_replaced > 0:
         model.set_attn_processor(lora_attn_procs)
     
-    # Log the *actual* number replaced
-    print(f"✅ Applied LoRA (rank={rank}) to {total_replaced} attention blocks.")
+    print(f"✅ Config 기반으로 총 {total_replaced}개의 프로세서를 LoRA 버전으로 교체했습니다.")
 
 def set_trainable_text_parts(t5_model, text_proj, etc_tokens: list):
-    """
-    Correctly unfreezes the projection layer and uses a
-    gradient hook to train *only* the new ETC tokens.
-    """
     text_proj.requires_grad_(True)
     print("✅ Text Projection (768→4096): Unfrozen")
 
@@ -136,31 +156,20 @@ def set_trainable_text_parts(t5_model, text_proj, etc_tokens: list):
     num_new_tokens = len(etc_tokens)
 
     if num_new_tokens > 0:
-        # Get the embedding weight parameter
         embedding_weight = t5_embed_layer.weight
-        
-        # 1. Make the *entire* parameter require gradients
         embedding_weight.requires_grad = True
         
-        # 2. Create a mask to identify the *old* tokens
-        # (Everything *except* the last 'num_new_tokens')
         old_token_mask = torch.ones_like(embedding_weight, dtype=torch.bool)
         old_token_mask[-num_new_tokens:] = False
 
-        # Ensure mask is on the same device
         old_token_mask = old_token_mask.to(embedding_weight.device)
 
-        # 3. Register a hook that will be called during backward()
         def zero_grad_hook(grad):
             mask_on_device = old_token_mask.to(grad.device)
-            # Zero out gradients for all *old* tokens
             grad[mask_on_device] = 0
-            
             return grad
         
-        # Register the hook on the weight tensor
         embedding_weight.register_hook(zero_grad_hook)
-        
         print(f"✅ mT5: {num_new_tokens} ETC-Tokens Unfrozen (using gradient hook).")
     
     return t5_embed_layer
@@ -168,7 +177,7 @@ def set_trainable_text_parts(t5_model, text_proj, etc_tokens: list):
 # 3. Trainer Class 
 
 class Trainer:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, resume_from_checkpoint: str = None):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
@@ -176,7 +185,12 @@ class Trainer:
         self.cfg_data = self.config['data']
         self.cfg_train = self.config['training']
         self.cfg_log = self.config['logging']
-
+        
+        self.resume_from = resume_from_checkpoint
+        self.global_step = 0
+        self.epoch = 0
+        self.resume_step_in_epoch = 0
+        
         self.accelerator = Accelerator(
             gradient_accumulation_steps=self.cfg_train['gradient_accumulation_steps'],
             mixed_precision=self.cfg_train['mixed_precision'],
@@ -187,6 +201,7 @@ class Trainer:
             self.accelerator.init_trackers(
                 project_name=self.cfg_log['wandb_project'],
                 config=self.config,
+                resume="allow", 
                 init_kwargs={"wandb": {"name": self.cfg_log['wandb_run_name']}}
             )
         
@@ -195,42 +210,32 @@ class Trainer:
         self.setup_models()
         self.setup_data()
         self.setup_optimization()
-        self.prepare_for_training()
-        self.global_step = 0
-
+        # self.prepare_for_training()
+    
     def setup_models(self):
         self.accelerator.print("Setting up models...")
         
-        # --- 1. 모델 로드 ---
-        # (Flux, AE는 GPU로, 텍스트 인코더는 CPU 오프로딩을 위해 CPU로)
         self.flux_model = load_flow_model(self.cfg_model['flux_model_type'], self.device).to(torch.bfloat16)
         self.ae = load_ae(self.cfg_model['flux_model_type'], self.device).to(torch.bfloat16)
         
         self.t5_model, self.t5_tokenizer = load_mt5_with_etc_tokens(
-          self.cfg_model['mt5_model_name'], self.cfg_model['etc_tokens'], device="cpu"
+            self.cfg_model['mt5_model_name'], self.cfg_model['etc_tokens'], device="cpu"
         )
         self.siglip_model, self.siglip_tokenizer = load_siglip(
             self.cfg_model['siglip_model_name'], device="cpu"
         )
-        # self.text_proj = TextProjection(input_dim=768, output_dim=4096).to("cpu", dtype=torch.bfloat16)
         self.text_proj = TextProjection(
             input_dim=768, 
-            output_dim=4096, 
-            dtype=torch.bfloat16 # 3. 생성 시 dtype 명시
-        ).to("cpu")
+            output_dim=4096
+        ).to("cpu", dtype=torch.bfloat16)
         
-        # (A) LoRA를 먼저 적용
         if self.cfg_model['use_lora']:
-            model_dtype = next(self.flux_model.parameters()).dtype
             apply_lora_to_model(
                 self.flux_model, 
-                rank=self.cfg_model['lora_rank'], 
-                hidden_size=self.flux_model.hidden_size,
-                device=self.device,
-                dtype=model_dtype
+                self.cfg_model, 
+                self.device
             ) 
 
-        # (B) 모든 기본 모델의 파라미터를 동결
         self.flux_model.requires_grad_(False)
         self.ae.eval().requires_grad_(False)
         self.t5_model.eval().requires_grad_(False)
@@ -238,8 +243,6 @@ class Trainer:
         self.text_proj.requires_grad_(False)
         self.accelerator.print("Froze all base model weights.")
 
-        # (C) LoRA, TextProj, ETC 토큰만 다시 활성화(Unfreeze)
-        # (C-1) LoRA 파라미터 활성화
         if self.cfg_model['use_lora']:
             lora_count = 0
             for name, param in self.flux_model.named_parameters():
@@ -251,7 +254,6 @@ class Trainer:
             else:
                 self.accelerator.print(f"✅ Unfroze {lora_count} LoRA parameters.")
             
-        # (C-2) 텍스트 관련 파라미터 활성화
         self.t5_embed_layer = set_trainable_text_parts(
             self.t5_model, self.text_proj, self.cfg_model['etc_tokens']
         )
@@ -259,16 +261,18 @@ class Trainer:
         if self.cfg_train.get('gradient_checkpointing', False):
             self.flux_model.gradient_checkpointing = True
             self.accelerator.print("✅ Gradient Checkpointing enabled for Flux model.")
-
-        # (D) 비학습 모델을 eval 모드로 설정
+ 
         self.ae.eval()
         self.siglip_model.eval()
         self.t5_model.eval()
+
+        
     def setup_data(self):
         self.accelerator.print("Setting up datasets...")
         train_dataset = TCDataset(
             metadata_path=self.cfg_data['metadata_path'], 
-            image_base_path=self.cfg_data['image_base_path']
+            image_base_path=self.cfg_data['image_base_path'],
+            resolution=self.cfg_data.get('resolution', 512)
         )
         self.train_dataloader = DataLoader(
             train_dataset, 
@@ -281,7 +285,6 @@ class Trainer:
     def setup_optimization(self):
         self.accelerator.print("Setting up optimizer and scheduler...")
         
-        # Correctly filter for *all* params that require grad
         lora_params = [p for p in self.flux_model.parameters() if p.requires_grad]
         proj_params = [p for p in self.text_proj.parameters() if p.requires_grad]
         t5_embed_params = [p for p in self.t5_embed_layer.parameters() if p.requires_grad]
@@ -291,10 +294,14 @@ class Trainer:
         if not trainable_params:
             self.accelerator.print("⚠️ WARNING: No trainable parameters found!")
         
-        # Log the *correct* counts
+        num_etc_tokens = len(self.cfg_model['etc_tokens'])
+        t5_hidden_size = self.t5_embed_layer.embedding_dim
+        actual_t5_trainable_params = num_etc_tokens * t5_hidden_size
+        full_t5_embed_params = sum(p.numel() for p in t5_embed_params)
+
         self.accelerator.print(f"📊 Trainable parameters:")
         self.accelerator.print(f"  - Flux (LoRA): {sum(p.numel() for p in lora_params):,}")
-        self.accelerator.print(f"  - mT5 (ETC):   {sum(p.numel() for p in t5_embed_params):,}")
+        self.accelerator.print(f"  - mT5 (ETC):   {actual_t5_trainable_params:,} (Hook applied to {full_t5_embed_params:,} total params)")
         self.accelerator.print(f"  - Projection:  {sum(p.numel() for p in proj_params):,}")
         
         self.optimizer = optim.AdamW(trainable_params, lr=self.cfg_train['learning_rate'])
@@ -312,8 +319,6 @@ class Trainer:
 
     def prepare_for_training(self):
         self.accelerator.print("Preparing models with accelerator...")
-        
-        # Prepare only the *trainable* models
         (
             self.flux_model,
             self.text_proj,
@@ -329,10 +334,7 @@ class Trainer:
             self.train_dataloader,
             self.lr_scheduler
         )
-        
-        # AE stays on GPU, but is not prepared (no gradients)
         self.ae.to(self.device)
-        # Text encoders stay on CPU, are not prepared
         
     def training_step(self, batch):
         x0_pixel, prompts_plain, prompts_html = batch
@@ -349,24 +351,21 @@ class Trainer:
         )
 
         # --- CPU Offloading ---
-        # (C-1) SigLIP 2 (vec) - Move, encode, offload
         self.siglip_model.to(self.device)
         with torch.no_grad():
             siglip_inputs = self.siglip_tokenizer(
-                prompts_plain, padding="max_length", max_length=64, # <-- Corrected length
+                prompts_plain, padding="max_length", max_length=64, 
                 truncation=True, return_tensors="pt"
             ).to(self.device)
             vec_cond = self.siglip_model(**siglip_inputs).pooler_output.to(dtype=torch.bfloat16)
-        self.siglip_model.cpu() # Offload back to CPU
+        self.siglip_model.cpu() 
 
-        # (C-2) mT5 (txt) - Move, encode, offload
         self.t5_model.to(self.device)
         t5_inputs = self.t5_tokenizer(
             prompts_html, padding="max_length", max_length=512, 
             truncation=True, return_tensors="pt"
         ).to(self.device)
         
-        # Get embeddings from the *prepared* (GPU) embedding layer
         t5_embeds = self.t5_embed_layer(t5_inputs.input_ids)
         
         with torch.no_grad():
@@ -374,13 +373,12 @@ class Trainer:
                 inputs_embeds=t5_embeds,
                 attention_mask=t5_inputs.attention_mask
             ).last_hidden_state.to(dtype=torch.bfloat16)
-        self.t5_model.cpu() # Offload back to CPU
+        self.t5_model.cpu() 
         # --- End Offloading ---
+        
         with self.accelerator.autocast():
-            # (C-3) Text Projection (Trainable)
             txt_cond = self.text_proj(txt_cond_768)
             
-            # (C-4) ID 텐서 준비
             txt_ids = torch.zeros(
                 txt_cond.shape[0], txt_cond.shape[1], 3, device=self.device, dtype=torch.bfloat16
             )
@@ -391,7 +389,6 @@ class Trainer:
             img_ids_template[..., 2] = img_ids_template[..., 2] + torch.arange(w, device=self.device)[None, :]
             img_ids = repeat(img_ids_template, "h w c -> b (h w) c", b=batch_size).to(torch.bfloat16)
 
-            # (D) Flux MM-DiT 순전파 (Trainable)
             noise_pred = self.flux_model(
                 img=img_cond,
                 img_ids=img_ids,
@@ -402,14 +399,12 @@ class Trainer:
                 guidance=guidance_tensor,
             )
 
-            # (h, w were defined earlier as zt.shape[2] // 2, zt.shape[3] // 2)
             noise_pred = rearrange(
                 noise_pred, 
                 "b (h w) (c ph pw) -> b c (h ph) (w pw)", 
                 h=h, w=w, ph=2, pw=2
             )
 
-            # (E) 손실 계산
             loss = F.mse_loss(noise_pred.float(), epsilon.float())
 
         return loss
@@ -419,7 +414,26 @@ class Trainer:
         self.accelerator.print("Starting training...")
         self.accelerator.print("="*80 + "\n")
 
-        for epoch in range(self.cfg_train['num_epochs']):
+        self.prepare_for_training()
+
+        # --- 체크포인트 로드 ---
+        if self.resume_from:
+            if Path(self.resume_from).exists():
+                try:
+                    self.load_checkpoint(self.resume_from)
+                except FileNotFoundError as e:
+                    self.accelerator.print(f"🔥 Error loading checkpoint: {e}")
+                    self.accelerator.print("Starting from scratch...")
+                    self.epoch = 0 # 로드 실패 시 0부터 시작
+            else:
+                self.accelerator.print(f"⚠️ Checkpoint path not found: {self.resume_from}. Starting from scratch.")
+                self.epoch = 0
+        # -----------------------------
+
+        # --- 루프 시작점을 self.epoch로 변경 ---
+        for epoch in range(self.epoch, self.cfg_train['num_epochs']):
+            self.epoch = epoch # 현재 에포크 저장
+            
             self.flux_model.train()
             self.text_proj.train()
             self.t5_embed_layer.train()
@@ -427,10 +441,14 @@ class Trainer:
             progress_bar = tqdm(
                 self.train_dataloader,
                 disable=not self.accelerator.is_local_main_process,
-                desc=f"Epoch {epoch+1}/{self.cfg_train['num_epochs']}"
+                desc=f"Epoch {epoch+1}/{self.cfg_train['num_epochs']}",
+                initial=self.resume_step_in_epoch
             )
             
             for step, batch in enumerate(progress_bar):
+                if step == 0 and self.resume_step_in_epoch > 0:
+                    self.resume_step_in_epoch = 0
+
                 if batch is None:
                     continue
                 
@@ -459,7 +477,72 @@ class Trainer:
         self.accelerator.print("Training complete!")
         self.save_checkpoint(final=True)
         self.accelerator.end_training()
+    
+    # --- load_checkpoint 메서드 ---
+    def load_checkpoint(self, checkpoint_dir: str):
+        self.accelerator.print(f"🔄 Resuming from checkpoint: {checkpoint_dir}")
+        try:
+            from safetensors.torch import load_file as load_sft
+            
+            lora_path = Path(checkpoint_dir) / "flux_lora.safetensors"
+            proj_path = Path(checkpoint_dir) / "text_projection.safetensors"
+            embed_path = Path(checkpoint_dir) / "t5_etc_embeddings.safetensors"
 
+            if lora_path.exists():
+                unwrapped_flux = self.accelerator.unwrap_model(self.flux_model)
+                unwrapped_flux.load_state_dict(load_sft(lora_path, device=self.device), strict=False)
+                self.accelerator.print("✅ Loaded LoRA weights.")
+            
+            if proj_path.exists():
+                unwrapped_proj = self.accelerator.unwrap_model(self.text_proj)
+                unwrapped_proj.load_state_dict(load_sft(proj_path, device=self.device), strict=False)
+                self.accelerator.print("✅ Loaded Text Projection weights.")
+
+            if embed_path.exists():
+                unwrapped_t5_embed = self.accelerator.unwrap_model(self.t5_embed_layer)
+                unwrapped_t5_embed.load_state_dict(load_sft(embed_path, device=self.device), strict=False)
+                self.accelerator.print("✅ Loaded ETC Token weights.")
+
+        except ImportError:
+             self.accelerator.print("⚠️ safetensors not found, skipping inference weight loading.")
+        
+        # --- (신규) 2. 옵티마이저 및 스케줄러 상태 로드 ---
+        opt_path = Path(checkpoint_dir) / "optimizer.pt"
+        sch_path = Path(checkpoint_dir) / "scheduler.pt"
+        
+        if opt_path.exists():
+            self.optimizer.load_state_dict(torch.load(opt_path, map_location=self.device))
+            self.accelerator.print("✅ Loaded optimizer state.")
+        else:
+            self.accelerator.print("⚠️ optimizer.pt not found. Resuming with fresh optimizer state.")
+            
+        if sch_path.exists():
+            self.lr_scheduler.load_state_dict(torch.load(sch_path, map_location=self.device))
+            self.accelerator.print("✅ Loaded scheduler state.")
+        else:
+            self.accelerator.print("⚠️ scheduler.pt not found. Resuming with fresh scheduler state.")
+
+        # --- (유지) 3. 훈련 진행 상태 (스텝, 에포크) 로드 ---
+        progress_path = Path(checkpoint_dir) / "training_state.pt"
+        if progress_path.exists():
+            progress_state = torch.load(progress_path, map_location="cpu")
+            self.global_step = progress_state.get('global_step', 0)
+            self.epoch = progress_state.get('epoch', 0)
+            
+            # --- (유지) 데이터로더 건너뛰기 로직 ---
+            steps_per_epoch = len(self.train_dataloader)
+            self.resume_step_in_epoch = self.global_step % steps_per_epoch
+            
+            if self.resume_step_in_epoch > 0:
+                self.accelerator.print(f"🔄 Resuming epoch {self.epoch} from step {self.resume_step_in_epoch}/{steps_per_epoch}")
+                self.accelerator.skip_first_batches(self.train_dataloader, self.resume_step_in_epoch)
+            
+            self.accelerator.print(f"✅ Resumed training state: global_step={self.global_step}, epoch={self.epoch}")
+        else:
+            self.accelerator.print("⚠️ training_state.pt not found. Resuming step/epoch from 0.")
+            self.resume_step_in_epoch = 0
+
+    # ---save_checkpoint ---
     def save_checkpoint(self, final=False):
         if not self.accelerator.is_main_process:
             return
@@ -470,6 +553,17 @@ class Trainer:
         save_dir.mkdir(parents=True, exist_ok=True)
         self.accelerator.print(f"\n💾 Saving checkpoint to {save_dir}...")
 
+        torch.save(self.optimizer.state_dict(), save_dir / "optimizer.pt")
+        torch.save(self.lr_scheduler.state_dict(), save_dir / "scheduler.pt")
+
+        # --- (유지) 2. 훈련 진행 상태 저장 ---
+        progress_state = {
+            'global_step': self.global_step,
+            'epoch': self.epoch
+        }
+        torch.save(progress_state, save_dir / "training_state.pt")
+        
+        # --- (유지) 3. 추론용 가중치 저장 ---
         unwrapped_flux = self.accelerator.unwrap_model(self.flux_model)
         unwrapped_proj = self.accelerator.unwrap_model(self.text_proj)
         unwrapped_t5_embed = self.accelerator.unwrap_model(self.t5_embed_layer)
@@ -491,7 +585,8 @@ class Trainer:
         with open(save_dir / "config.yaml", 'w') as f:
             yaml.dump(self.config, f)
             
-        self.accelerator.print(f"✅ Checkpoint saved.")
+        self.accelerator.print(f"✅ Checkpoint (resumption + inference) saved.")
+
 
 # 4. Script Execution
 def main():
@@ -502,13 +597,21 @@ def main():
         required=True,
         help="Path to config.yaml file"
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--resume_from_checkpoint",
+        type=str,
+        default=None,
+        help="Path to a checkpoint directory to resume training from (e.g., ./outputs/step-2000)"
+    )
+    # ------------------------------
     
-    # Ensure config path is absolute or relative to execution dir
-    # This assumes config.yaml is in the same dir as train.py
+    args = parser.parse_args()
     config_path = args.config
 
-    trainer = Trainer(config_path=str(config_path))
+    trainer = Trainer(
+        config_path=str(config_path),
+        resume_from_checkpoint=args.resume_from_checkpoint 
+    )
     trainer.train()
 
 if __name__ == "__main__":

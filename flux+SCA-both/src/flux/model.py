@@ -1,9 +1,3 @@
-"""
-FLUX의 전체 구조 정의
-MM-DiT 아키텍처
-"""
-
-
 from dataclasses import dataclass
 from typing import Any, Dict
 
