@@ -1,0 +1,25 @@
+# 가상환경
+.venv/
+
+# 대용량 파일들
+flux+SCA-both/src/models/
+flux+SCA-only/
+flux+SCA-both/src/wandb/
+flux+SCA-both/fonts/
+flux+SCA-both/logs/
+flux+SCA-both/outputs/
+flux+SCA-both/tensorboard/
+flux+SCA-both/wandb/
+flux+SCA-both/checkpoints/
+flux+SCA-both/tc-dataset/
+flux+SCA-both/tc-dataset/
+flux+SCA-both/src/outputs/
+flux+SCA-both/src/slurm_logs/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# 기타
+.DS_Store
+*.logflux+SCA-both/src/outputs/
